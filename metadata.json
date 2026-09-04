@@ -1,0 +1,6 @@
+{
+  "name": "Velo",
+  "description": "Advanced AI Voice Assistant that listens to voice commands in Hindi and English, responds in JSON, and triggers phone actions.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
