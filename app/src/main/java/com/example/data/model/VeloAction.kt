@@ -52,6 +52,29 @@ sealed class VeloAction {
         override val actionName: String = "get_time"
     }
 
+    data class MakeCall(
+        val target: String = "",
+        val phoneNumber: String? = null,
+        override val rawJson: String,
+        override val userQuery: String,
+        override val timestamp: Long = System.currentTimeMillis(),
+        override val executionStatus: String = "",
+        override val isSuccess: Boolean = true
+    ) : VeloAction() {
+        override val actionName: String = "make_call"
+    }
+
+    data class WebSearch(
+        val query: String,
+        override val rawJson: String,
+        override val userQuery: String,
+        override val timestamp: Long = System.currentTimeMillis(),
+        override val executionStatus: String = "",
+        override val isSuccess: Boolean = true
+    ) : VeloAction() {
+        override val actionName: String = "web_search"
+    }
+
     data class GeneralChat(
         val reply: String,
         override val rawJson: String,
@@ -70,4 +93,10 @@ enum class VoiceState {
     PROCESSING,
     SPEAKING,
     ERROR
+}
+
+enum class SpeechLanguage(val code: String, val displayName: String, val localeTag: String) {
+    AUTO("auto", "Auto (हिन्दी + Eng)", "hi-IN"),
+    HINDI("hi", "हिन्दी (Hindi)", "hi-IN"),
+    ENGLISH("en", "English", "en-IN")
 }

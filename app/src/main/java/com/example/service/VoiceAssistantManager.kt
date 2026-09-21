@@ -9,6 +9,7 @@ import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
+import com.example.data.model.SpeechLanguage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,7 +18,8 @@ import java.util.Locale
 class VoiceAssistantManager(
     private val context: Context,
     private val onResultReceived: (String) -> Unit,
-    private val onErrorReceived: (String) -> Unit
+    private val onErrorReceived: (String) -> Unit,
+    private val onPartialResultReceived: ((String) -> Unit)? = null
 ) : RecognitionListener, TextToSpeech.OnInitListener {
 
     companion object {
@@ -37,12 +39,48 @@ class VoiceAssistantManager(
     private val _soundLevel = MutableStateFlow(0f)
     val soundLevel: StateFlow<Float> = _soundLevel.asStateFlow()
 
+    private val _selectedLanguage = MutableStateFlow(SpeechLanguage.AUTO)
+    val selectedLanguage: StateFlow<SpeechLanguage> = _selectedLanguage.asStateFlow()
+
     init {
         tts = TextToSpeech(context.applicationContext, this)
     }
 
     fun isSpeechRecognitionAvailable(): Boolean {
         return SpeechRecognizer.isRecognitionAvailable(context)
+    }
+
+    fun setLanguage(language: SpeechLanguage) {
+        _selectedLanguage.value = language
+    }
+
+    fun createSpeechIntent(language: SpeechLanguage = _selectedLanguage.value): Intent {
+        return Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+
+            when (language) {
+                SpeechLanguage.HINDI -> {
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE, "hi-IN")
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "hi-IN")
+                    putExtra("android.speech.extra.EXTRA_ADDITIONAL_LANGUAGES", arrayOf("hi-IN"))
+                    putExtra(RecognizerIntent.EXTRA_PROMPT, "Velo सुन रहा है... (बोलिए)")
+                }
+                SpeechLanguage.ENGLISH -> {
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-IN")
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "en-IN")
+                    putExtra("android.speech.extra.EXTRA_ADDITIONAL_LANGUAGES", arrayOf("en-IN", "en-US", "en-GB"))
+                    putExtra(RecognizerIntent.EXTRA_PROMPT, "Velo is listening... (Speak now)")
+                }
+                SpeechLanguage.AUTO -> {
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE, "hi-IN")
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "hi-IN")
+                    putExtra("android.speech.extra.EXTRA_ADDITIONAL_LANGUAGES", arrayOf("en-IN", "en-US", "hi-IN"))
+                    putExtra(RecognizerIntent.EXTRA_PROMPT, "Velo सुन रहा है • Speak in Hindi or English")
+                }
+            }
+        }
     }
 
     fun startListening() {
@@ -53,16 +91,7 @@ class VoiceAssistantManager(
             }
         }
 
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
-            // Support both Hindi and English recognition
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "hi-IN")
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "hi-IN")
-            putExtra("android.speech.extra.EXTRA_ADDITIONAL_LANGUAGES", arrayOf("en-IN", "en-US", "hi-IN"))
-            putExtra(RecognizerIntent.EXTRA_PROMPT, "Velo is listening...")
-        }
+        val intent = createSpeechIntent(_selectedLanguage.value)
 
         try {
             speechRecognizer?.startListening(intent)
@@ -179,7 +208,13 @@ class VoiceAssistantManager(
         }
     }
 
-    override fun onPartialResults(partialResults: Bundle?) {}
+    override fun onPartialResults(partialResults: Bundle?) {
+        val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+        val partialText = matches?.firstOrNull()?.trim()
+        if (!partialText.isNullOrBlank()) {
+            onPartialResultReceived?.invoke(partialText)
+        }
+    }
 
     override fun onEvent(eventType: Int, params: Bundle?) {}
 

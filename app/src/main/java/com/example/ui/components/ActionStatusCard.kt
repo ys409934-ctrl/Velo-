@@ -18,11 +18,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Message
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -73,6 +75,16 @@ fun ActionStatusCard(
             Icons.Default.AccessTime,
             Color(0xFFFFD54F),
             "Time: ${action.formattedTime}"
+        )
+        is VeloAction.MakeCall -> Triple(
+            Icons.Default.Call,
+            Color(0xFF00E676),
+            if (action.target.isNotBlank()) "Call: ${action.target}" else if (action.phoneNumber != null) "Call: ${action.phoneNumber}" else "Open Dialer"
+        )
+        is VeloAction.WebSearch -> Triple(
+            Icons.Default.Search,
+            Color(0xFF4285F4),
+            if (action.query.isNotBlank()) "Google Search: \"${action.query}\"" else "Google Search"
         )
         is VeloAction.GeneralChat -> Triple(
             Icons.AutoMirrored.Filled.Chat,

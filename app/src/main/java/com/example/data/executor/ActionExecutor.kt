@@ -1,12 +1,15 @@
 package com.example.data.executor
 
+import android.Manifest
 import android.app.SearchManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.provider.ContactsContract
 import android.provider.MediaStore
 import android.provider.Settings
+import androidx.core.content.ContextCompat
 import com.example.data.model.VeloAction
 import java.net.URLEncoder
 import java.text.SimpleDateFormat
@@ -27,6 +30,8 @@ class ActionExecutor(private val context: Context) {
             is VeloAction.PlayMusic -> executePlayMusic(action.query)
             is VeloAction.CheckMessages -> executeCheckMessages(action.platform)
             is VeloAction.GetTime -> executeGetTime()
+            is VeloAction.MakeCall -> executeMakeCall(action.target, action.phoneNumber)
+            is VeloAction.WebSearch -> executeWebSearch(action.query)
             is VeloAction.GeneralChat -> executeGeneralChat(action.reply)
         }
     }
@@ -268,6 +273,183 @@ class ActionExecutor(private val context: Context) {
             message = "Current Time: $currentTime ($currentDate)",
             speechNarration = narration
         )
+    }
+
+    private fun executeMakeCall(target: String, phoneNumber: String?): ExecutionResult {
+        val cleanTarget = target.trim()
+        val directDigits = (phoneNumber ?: cleanTarget).filter { it.isDigit() || it == '+' }
+
+        // 1. If explicit phone number is available (e.g. 100, 112, or 10-digit mobile)
+        val resolvedNumber = if (directDigits.length >= 3 && directDigits.any { it.isDigit() }) {
+            directDigits
+        } else if (cleanTarget.isNotBlank() && !isGenericCallWord(cleanTarget)) {
+            // Try contact search in device contacts
+            searchContactNumber(cleanTarget)
+        } else {
+            null
+        }
+
+        if (resolvedNumber != null) {
+            val displayName = if (cleanTarget.isNotBlank() && cleanTarget != directDigits) cleanTarget else resolvedNumber
+
+            // If CALL_PHONE permission is granted, place direct call
+            val hasCallPermission = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.CALL_PHONE
+            ) == PackageManager.PERMISSION_GRANTED
+
+            if (hasCallPermission) {
+                try {
+                    val callIntent = Intent(Intent.ACTION_CALL, Uri.parse("tel:$resolvedNumber")).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(callIntent)
+                    return ExecutionResult(
+                        success = true,
+                        message = "Calling $displayName ($resolvedNumber)...",
+                        speechNarration = "$displayName को कॉल लगाई जा रही है"
+                    )
+                } catch (_: Exception) {
+                    // Fall back to dialer below
+                }
+            }
+
+            // Zero-permission fallback: Open Dialer with number filled in
+            return try {
+                val dialIntent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$resolvedNumber")).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(dialIntent)
+                ExecutionResult(
+                    success = true,
+                    message = "Dialer opened for $displayName ($resolvedNumber)",
+                    speechNarration = "$displayName को कॉल करने के लिए डायलर खोला गया है"
+                )
+            } catch (e: Exception) {
+                ExecutionResult(
+                    success = false,
+                    message = "Could not open dialer: ${e.localizedMessage}",
+                    speechNarration = "कॉल लगाने में समस्या आई"
+                )
+            }
+        }
+
+        // 2. If target contact name is given but number not found or no contacts permission
+        if (cleanTarget.isNotBlank() && !isGenericCallWord(cleanTarget)) {
+            return try {
+                val dialIntent = Intent(Intent.ACTION_DIAL).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(dialIntent)
+                ExecutionResult(
+                    success = true,
+                    message = "Dialer opened to call $cleanTarget",
+                    speechNarration = "$cleanTarget को कॉल करने के लिए डायलर खोला जा रहा है"
+                )
+            } catch (e: Exception) {
+                ExecutionResult(
+                    success = false,
+                    message = "Could not open dialer: ${e.localizedMessage}",
+                    speechNarration = "डायलर नहीं खुल पाया"
+                )
+            }
+        }
+
+        // 3. Generic dialer opening (e.g. "call lagao", "call lagane ka", "phone lagao")
+        return try {
+            val dialIntent = Intent(Intent.ACTION_DIAL).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(dialIntent)
+            ExecutionResult(
+                success = true,
+                message = "Phone dialer opened",
+                speechNarration = "कॉल लगाने के लिए डायलर खोला जा रहा है"
+            )
+        } catch (e: Exception) {
+            ExecutionResult(
+                success = false,
+                message = "Could not open phone dialer: ${e.localizedMessage}",
+                speechNarration = "डायलर नहीं खुल पाया"
+            )
+        }
+    }
+
+    private fun isGenericCallWord(text: String): Boolean {
+        val lower = text.lowercase()
+        return lower in listOf("call", "phone", "dialer", "कॉल", "फोन", "डायलर", "lagao", "karo", "lagane ka")
+    }
+
+    private fun searchContactNumber(contactName: String): String? {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
+            return null
+        }
+        return try {
+            val projection = arrayOf(
+                ContactsContract.CommonDataKinds.Phone.NUMBER,
+                ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME
+            )
+            val selection = "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?"
+            val selectionArgs = arrayOf("%$contactName%")
+            val cursor = context.contentResolver.query(
+                ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                projection,
+                selection,
+                selectionArgs,
+                null
+            )
+            cursor?.use {
+                if (it.moveToFirst()) {
+                    val numberIndex = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+                    if (numberIndex >= 0) {
+                        return it.getString(numberIndex)
+                    }
+                }
+            }
+            null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun executeWebSearch(query: String): ExecutionResult {
+        val cleanQuery = query.trim()
+        if (cleanQuery.isBlank()) {
+            val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com")).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            return tryStartIntent(browserIntent, "गूगल खोला जा रहा है", "Google opened")
+        }
+
+        return try {
+            val encodedQuery = URLEncoder.encode(cleanQuery, "UTF-8")
+            val webSearchIntent = Intent(Intent.ACTION_WEB_SEARCH).apply {
+                putExtra(SearchManager.QUERY, cleanQuery)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            // Check if ACTION_WEB_SEARCH can be handled, else standard Google URL
+            val resolved = context.packageManager.resolveActivity(webSearchIntent, PackageManager.MATCH_DEFAULT_ONLY)
+            if (resolved != null) {
+                context.startActivity(webSearchIntent)
+            } else {
+                val googleUrlIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=$encodedQuery")).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(googleUrlIntent)
+            }
+
+            ExecutionResult(
+                success = true,
+                message = "Google search: '$cleanQuery'",
+                speechNarration = "गूगल पर $cleanQuery सर्च किया जा रहा है"
+            )
+        } catch (e: Exception) {
+            ExecutionResult(
+                success = false,
+                message = "Search error: ${e.localizedMessage}",
+                speechNarration = "गूगल सर्च करने में समस्या आई"
+            )
+        }
     }
 
     private fun executeGeneralChat(reply: String): ExecutionResult {

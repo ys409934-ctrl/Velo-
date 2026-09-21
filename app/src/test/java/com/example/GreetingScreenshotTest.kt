@@ -2,7 +2,12 @@ package com.example
 
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import com.example.ui.components.JsonResponseCard
+import com.example.ui.components.PulsingVisualizer
 import com.example.ui.theme.MyApplicationTheme
 import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
 import com.github.takahirom.roborazzi.captureRoboImage
@@ -32,5 +37,22 @@ class GreetingScreenshotTest {
     }
 
     composeTestRule.onRoot().captureRoboImage(filePath = "src/test/screenshots/greeting.png")
+  }
+
+  @Test
+  fun visualizer_pulsing_test() {
+    composeTestRule.setContent {
+      MyApplicationTheme {
+        Box(modifier = Modifier.size(240.dp)) {
+          PulsingVisualizer(
+            isListening = true,
+            soundLevel = 0.6f,
+            componentSize = 240.dp
+          )
+        }
+      }
+    }
+
+    composeTestRule.onRoot().captureRoboImage(filePath = "src/test/screenshots/pulsing_visualizer.png")
   }
 }

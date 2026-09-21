@@ -71,9 +71,11 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import com.example.data.model.SpeechLanguage
 import com.example.data.model.VoiceState
 import com.example.ui.components.ActionStatusCard
 import com.example.ui.components.JsonResponseCard
+import com.example.ui.components.PulsingVisualizer
 import com.example.ui.components.VoiceOrb
 import com.example.ui.theme.ElectricViolet
 import com.example.ui.theme.MintGreen
@@ -99,6 +101,7 @@ fun VeloScreen(
     val history by viewModel.history.collectAsState()
     val statusMessage by viewModel.statusMessage.collectAsState()
     val isTtsEnabled by viewModel.isTtsEnabled.collectAsState()
+    val speechLanguage by viewModel.speechLanguage.collectAsState()
 
     var showHelpDialog by remember { mutableStateOf(false) }
 
@@ -168,6 +171,8 @@ fun VeloScreen(
                     voiceState = voiceState,
                     soundLevel = soundLevel,
                     statusMessage = statusMessage,
+                    speechLanguage = speechLanguage,
+                    onLanguageChanged = { viewModel.setSpeechLanguage(it) },
                     onOrbClick = requestVoiceTrigger
                 )
             }
@@ -292,17 +297,36 @@ private fun VeloTopBar(
             Spacer(modifier = Modifier.width(10.dp))
 
             Column {
-                Text(
-                    text = "Velo AI",
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "Velo AI",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
                     )
-                )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(ElectricViolet.copy(alpha = 0.3f))
+                            .border(0.5.dp, NeonCyan.copy(alpha = 0.5f), RoundedCornerShape(4.dp))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = "by Yuvraj",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                color = NeonCyan,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 10.sp
+                            )
+                        )
+                    }
+                }
                 Text(
-                    text = "Voice Assistant • JSON Engine",
+                    text = "Created by Yuvraj • Voice Assistant",
                     style = MaterialTheme.typography.bodySmall.copy(
-                        color = NeonCyan,
+                        color = TextSecondary,
                         fontSize = 11.sp
                     )
                 )
@@ -358,6 +382,8 @@ private fun VeloAssistantHeader(
     voiceState: VoiceState,
     soundLevel: Float,
     statusMessage: String,
+    speechLanguage: SpeechLanguage,
+    onLanguageChanged: (SpeechLanguage) -> Unit,
     onOrbClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -365,19 +391,30 @@ private fun VeloAssistantHeader(
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Glowing Voice Orb
-        VoiceOrb(
-            voiceState = voiceState,
-            soundLevel = soundLevel,
-            onClick = onOrbClick
-        )
+        // Glowing Voice Orb with Pulsing Listening Feedback Visualizer
+        Box(
+            modifier = Modifier.size(240.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            PulsingVisualizer(
+                isListening = voiceState == VoiceState.LISTENING,
+                soundLevel = soundLevel,
+                componentSize = 240.dp
+            )
+
+            VoiceOrb(
+                voiceState = voiceState,
+                soundLevel = soundLevel,
+                onClick = onOrbClick
+            )
+        }
 
         Spacer(modifier = Modifier.height(14.dp))
 
         // State indicator badge
         val stateText = when (voiceState) {
             VoiceState.IDLE -> "Tap orb to speak"
-            VoiceState.LISTENING -> "Listening..."
+            VoiceState.LISTENING -> "🎙️ Recording Voice Command..."
             VoiceState.PROCESSING -> "Analyzing with Velo AI..."
             VoiceState.SPEAKING -> "Velo speaking..."
             VoiceState.ERROR -> "Attention required"
@@ -385,7 +422,7 @@ private fun VeloAssistantHeader(
 
         val stateColor = when (voiceState) {
             VoiceState.IDLE -> NeonCyan
-            VoiceState.LISTENING -> NeonCyan
+            VoiceState.LISTENING -> Color(0xFFFF3366)
             VoiceState.PROCESSING -> ElectricViolet
             VoiceState.SPEAKING -> MintGreen
             VoiceState.ERROR -> Color(0xFFFF5252)
@@ -417,6 +454,62 @@ private fun VeloAssistantHeader(
             ),
             modifier = Modifier.padding(horizontal = 24.dp)
         )
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Speech Language Selector (Hindi / English / Bilingual Auto)
+        LanguageSelectorRow(
+            selectedLanguage = speechLanguage,
+            onLanguageSelected = onLanguageChanged
+        )
+    }
+}
+
+@Composable
+private fun LanguageSelectorRow(
+    selectedLanguage: SpeechLanguage,
+    onLanguageSelected: (SpeechLanguage) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(VeloSurfaceVariant)
+            .border(1.dp, VeloCardBorder, RoundedCornerShape(20.dp))
+            .padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        SpeechLanguage.entries.forEach { lang ->
+            val isSelected = lang == selectedLanguage
+            val bgModifier = if (isSelected) {
+                Modifier.background(Brush.horizontalGradient(listOf(ElectricViolet, NeonCyan)))
+            } else {
+                Modifier.background(Color.Transparent)
+            }
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(16.dp))
+                    .then(bgModifier)
+                    .clickable { onLanguageSelected(lang) }
+                    .padding(horizontal = 10.dp, vertical = 5.dp)
+                    .testTag("lang_chip_${lang.code}"),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = when (lang) {
+                        SpeechLanguage.AUTO -> "🌐 Auto (द्विभाषी)"
+                        SpeechLanguage.HINDI -> "🇮🇳 हिन्दी"
+                        SpeechLanguage.ENGLISH -> "🇬🇧 English"
+                    },
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        color = if (isSelected) Color.Black else TextSecondary,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                        fontSize = 11.sp
+                    )
+                )
+            }
+        }
     }
 }
 
@@ -426,6 +519,7 @@ private fun QuickCommandSection(
     modifier: Modifier = Modifier
 ) {
     val quickCommands = listOf(
+        "Call lagao",
         "Open YouTube",
         "WhatsApp check karo",
         "Gaana bajao",
@@ -530,14 +624,14 @@ private fun VeloBottomInputBar(
                 modifier = Modifier
                     .size(46.dp)
                     .clip(CircleShape)
-                    .background(if (isListening) NeonCyan else VeloSurfaceVariant)
-                    .border(1.dp, if (isListening) NeonCyan else VeloCardBorder, CircleShape)
+                    .background(if (isListening) Color(0xFFFF3366) else VeloSurfaceVariant)
+                    .border(1.dp, if (isListening) Color(0xFFFF3366) else VeloCardBorder, CircleShape)
                     .testTag("bottom_mic_button")
             ) {
                 Icon(
                     imageVector = Icons.Default.Mic,
                     contentDescription = "Voice Record",
-                    tint = if (isListening) VeloBackground else NeonCyan,
+                    tint = if (isListening) Color.White else NeonCyan,
                     modifier = Modifier.size(22.dp)
                 )
             }
@@ -610,9 +704,23 @@ private fun VeloHelpDialog(onDismiss: () -> Unit) {
                 )
 
                 HelpCategory(
-                    title = "5. General Chat",
-                    example = "kaise ho / tum kaun ho",
+                    title = "5. Make Call",
+                    example = "call lagane ka / call 9876543210 / papa ko call karo",
+                    jsonFormat = "{\"action\": \"make_call\", \"target\": \"papa\"}"
+                )
+
+                HelpCategory(
+                    title = "6. General Chat",
+                    example = "kaise ho / tum kaun ho / owner kon ha",
                     jsonFormat = "{\"action\": \"general_chat\", \"reply\": \"...\"}"
+                )
+
+                Text(
+                    text = "Velo AI • Crafted with ❤️ by Yuvraj",
+                    color = NeonCyan,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.padding(top = 8.dp)
                 )
             }
         },

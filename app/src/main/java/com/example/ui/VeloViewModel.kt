@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.executor.ActionExecutor
+import com.example.data.model.SpeechLanguage
 import com.example.data.model.VeloAction
 import com.example.data.model.VoiceState
 import com.example.data.network.GeminiService
@@ -24,6 +25,9 @@ class VeloViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _voiceState = MutableStateFlow(VoiceState.IDLE)
     val voiceState: StateFlow<VoiceState> = _voiceState.asStateFlow()
+
+    private val _speechLanguage = MutableStateFlow(SpeechLanguage.AUTO)
+    val speechLanguage: StateFlow<SpeechLanguage> = _speechLanguage.asStateFlow()
 
     private val _inputText = MutableStateFlow("")
     val inputText: StateFlow<String> = _inputText.asStateFlow()
@@ -55,6 +59,10 @@ class VeloViewModel(application: Application) : AndroidViewModel(application) {
             onErrorReceived = { errorMessage ->
                 _voiceState.value = VoiceState.ERROR
                 _statusMessage.value = errorMessage
+            },
+            onPartialResultReceived = { partialText ->
+                _inputText.value = partialText
+                _statusMessage.value = "🎙️ \"$partialText\""
             }
         )
 
@@ -63,7 +71,11 @@ class VeloViewModel(application: Application) : AndroidViewModel(application) {
             voiceAssistantManager?.isListening?.collect { listening ->
                 if (listening) {
                     _voiceState.value = VoiceState.LISTENING
-                    _statusMessage.value = "Listening to voice in Hindi / English..."
+                    _statusMessage.value = when (_speechLanguage.value) {
+                        SpeechLanguage.HINDI -> "हिंदी में बोलिए... (Listening in Hindi)"
+                        SpeechLanguage.ENGLISH -> "Speak now in English..."
+                        SpeechLanguage.AUTO -> "Listening in Hindi or English (बोलिए)..."
+                    }
                 } else if (_voiceState.value == VoiceState.LISTENING) {
                     _voiceState.value = VoiceState.IDLE
                 }
@@ -83,6 +95,17 @@ class VeloViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateInputText(text: String) {
         _inputText.value = text
+    }
+
+    fun setSpeechLanguage(language: SpeechLanguage) {
+        _speechLanguage.value = language
+        voiceAssistantManager?.setLanguage(language)
+        _statusMessage.value = "Voice Language: ${language.displayName}"
+    }
+
+    fun createSpeechIntent(): android.content.Intent {
+        return voiceAssistantManager?.createSpeechIntent(_speechLanguage.value)
+            ?: android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
     }
 
     fun toggleVoiceListening() {
@@ -152,6 +175,14 @@ class VeloViewModel(application: Application) : AndroidViewModel(application) {
                         executionStatus = executionResult.message,
                         isSuccess = executionResult.success
                     )
+                    is VeloAction.MakeCall -> parsedAction.copy(
+                        executionStatus = executionResult.message,
+                        isSuccess = executionResult.success
+                    )
+                    is VeloAction.WebSearch -> parsedAction.copy(
+                        executionStatus = executionResult.message,
+                        isSuccess = executionResult.success
+                    )
                     is VeloAction.GeneralChat -> parsedAction.copy(
                         executionStatus = executionResult.message,
                         isSuccess = executionResult.success
@@ -214,6 +245,24 @@ class VeloViewModel(application: Application) : AndroidViewModel(application) {
                     userQuery = originalQuery
                 )
             }
+            "make_call" -> {
+                val target = json.optString("target", "")
+                val phone = if (json.has("phone_number") && !json.isNull("phone_number")) json.getString("phone_number") else null
+                VeloAction.MakeCall(
+                    target = target,
+                    phoneNumber = phone,
+                    rawJson = rawJson,
+                    userQuery = originalQuery
+                )
+            }
+            "web_search" -> {
+                val query = json.optString("query", originalQuery)
+                VeloAction.WebSearch(
+                    query = query,
+                    rawJson = rawJson,
+                    userQuery = originalQuery
+                )
+            }
             else -> {
                 val reply = json.optString("reply", "नमस्ते! मैं वेलो हूँ, आपकी क्या मदद करूँ?")
                 VeloAction.GeneralChat(
@@ -231,6 +280,8 @@ class VeloViewModel(application: Application) : AndroidViewModel(application) {
             is VeloAction.PlayMusic -> if (action.query.isNotBlank()) "${action.query} बजाया जा रहा है" else "गाना बजाया जा रहा है"
             is VeloAction.CheckMessages -> "${action.platform} में मैसेज चेक किए जा रहे हैं"
             is VeloAction.GetTime -> "अभी ${action.formattedTime} बजे हैं"
+            is VeloAction.MakeCall -> if (action.target.isNotBlank()) "${action.target} को कॉल लगाई जा रही है" else "कॉल लगाने के लिए डायलर खोला जा रहा है"
+            is VeloAction.WebSearch -> if (action.query.isNotBlank()) "गूगल पर ${action.query} सर्च किया जा रहा है" else "गूगल खोला जा रहा है"
             is VeloAction.GeneralChat -> action.reply
         }
         voiceAssistantManager?.speak(textToSpeak, isMuted = false)
